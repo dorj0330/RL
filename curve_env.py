@@ -83,6 +83,15 @@ class CurveDrawEnv(gym.Env):
                  max_turn: float = math.radians(45),
                  goal_eps: float = 0.02,
                  max_steps: int = 200,
+                 goal_bonus: float = 40.0,
+                 progress_scale: float = 8.0,
+                 small_step_penalty: float = -0.01,
+                 curvature_bonus_weight: float = 0.5,
+                 sharp_turn_penalty_weight: float = 0.6,
+                 collision_penalty: float = 12.0,
+                 out_of_bounds_penalty: float = 4.0,
+                 failure_penalty: float = 8.0,
+                 miss_penalty_scale: float = 25.0,
                  seed: Optional[int] = None):
         super().__init__()
         self.with_obstacles = with_obstacles
@@ -94,6 +103,15 @@ class CurveDrawEnv(gym.Env):
         self.max_turn = max_turn
         self.goal_eps = goal_eps
         self.max_steps = max_steps
+        self.goal_bonus = goal_bonus
+        self.progress_scale = progress_scale
+        self.small_step_penalty = small_step_penalty
+        self.curvature_bonus_weight = curvature_bonus_weight
+        self.sharp_turn_penalty_weight = sharp_turn_penalty_weight
+        self.collision_penalty = collision_penalty
+        self.out_of_bounds_penalty = out_of_bounds_penalty
+        self.failure_penalty = failure_penalty
+        self.miss_penalty_scale = miss_penalty_scale
 
         if seed is not None:
             self.np_random, _ = gym.utils.seeding.np_random(seed)
@@ -239,10 +257,16 @@ class CurveDrawEnv(gym.Env):
         import numpy as np
 
         # --- Hyperparams ----------------------------------------------------------
-        goal_eps = getattr(self, "goal_eps", 0.02)
-        goal_bonus = getattr(self, "goal_bonus",30.0)
-        progress_scale = getattr(self, "progress_scale", 6.0)
-        small_step_penalty = getattr(self, "small_step_penalty", 0.0)
+        goal_eps = self.goal_eps
+        goal_bonus = self.goal_bonus
+        progress_scale = self.progress_scale
+        small_step_penalty = self.small_step_penalty
+        curvature_bonus_weight = self.curvature_bonus_weight
+        sharp_turn_penalty_weight = self.sharp_turn_penalty_weight
+        collision_penalty = self.collision_penalty
+        out_of_bounds_penalty = self.out_of_bounds_penalty
+        failure_penalty = self.failure_penalty
+        miss_penalty_scale = self.miss_penalty_scale
 
         # --- Parse action ---------------------------------------------------------
         a = np.asarray(action, dtype=np.float32).reshape(-1)
@@ -296,9 +320,9 @@ class CurveDrawEnv(gym.Env):
         mu, sigma = 0.35, 0.25
         curvature_bonus = math.exp(-0.5 *
                                    ((turn_ratio - mu) / max(1e-6, sigma)) ** 2)
-        r += 0.5 * curvature_bonus
+        r += curvature_bonus_weight * curvature_bonus
         if turn_ratio > 0.7:
-            r -= 0.6 * (turn_ratio - 0.7) / 0.3
+            r -= sharp_turn_penalty_weight * (turn_ratio - 0.7) / 0.3
 
         r += small_step_penalty
 
@@ -308,10 +332,10 @@ class CurveDrawEnv(gym.Env):
 
         # --- Transitions / Termination -------------------------------------------
         if out_of_bounds:
-            r -= 2.0
+            r -= out_of_bounds_penalty
             truncated = True
         elif collided:
-            r -= 10.0
+            r -= collision_penalty
             terminated = True
         else:
             # commit move
@@ -332,12 +356,20 @@ class CurveDrawEnv(gym.Env):
                 r -= 0.5
             truncated = True
 
+        if (terminated or truncated) and not success:
+            shortfall = max(0.0, new_dist - goal_eps)
+            if not collided and not out_of_bounds:
+                r -= failure_penalty
+            if shortfall > 0:
+                r -= miss_penalty_scale * shortfall
+
         obs = self._obs()
         info = {
             "distance_to_goal": new_dist,
             "collided": collided,
             "out_of_bounds": out_of_bounds,
             "success": success,
+            "shortfall": max(0.0, new_dist - goal_eps),
             "path": self.path.copy(),
         }
         return obs, float(r), terminated, truncated, info

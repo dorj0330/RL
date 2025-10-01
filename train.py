@@ -15,8 +15,6 @@ from typing import List, Optional
 
 DEFAULT_GOAL_EPS = 0.02
 
-DEFAULT_GOAL_EPS = 0.02
-
 
 class MetricsCallback(BaseCallback):
     """

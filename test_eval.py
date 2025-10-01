@@ -125,10 +125,12 @@ def run_one_case(
     obs, info = env.reset(seed=seed)
     path = info.get("path", [env.start])
     steps = 0
+    last_info = info
     while steps < max_steps:
         action, _ = model.predict(obs, deterministic=deterministic)
         obs, r, terminated, truncated, info = env.step(action)
         path = info.get("path", path)
+        last_info = info
         steps += 1
         if terminated or truncated:
             break
@@ -140,6 +142,10 @@ def run_one_case(
     fig.tight_layout()
     fig.savefig(png_path, dpi=160)
     plt.close(fig)
+    shortfall = last_info.get("shortfall") if isinstance(last_info, dict) else None
+    success = last_info.get("success") if isinstance(last_info, dict) else None
+    if shortfall is not None:
+        print(f"[{case_name}] shortfall={shortfall:.4f} success={bool(success)}")
     print(f"[{case_name}] Saved PNG -> {png_path}")
 
 

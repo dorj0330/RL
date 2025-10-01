@@ -52,6 +52,11 @@ progress in the hardest setting.
 * **Inspect metrics.** After training finishes the script stores learning curves
   under `result/` so you can verify collision, success, and distance trends.
 
+* **Reward shaping.** `CurveDrawEnv` now includes a small per-step penalty and a
+  failure penalty that scales with how far the final point is from the goal. This
+  makes it costly for the policy to stop short.  The evaluation harness prints
+  the final `shortfall` distance so you can confirm convergence to the goal.
+
 * **Evaluate visually.** Use `test_eval.py` with the saved model to render the
   provided static scenarios:
 
