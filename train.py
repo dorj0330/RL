@@ -263,11 +263,11 @@ def main():
         policy_kwargs=policy_kwargs,
         n_steps=1024,
         batch_size=2048,
-        learning_rate=1e-4,
+        learning_rate=3e-4,
         gae_lambda=0.95,
         gamma=0.99,
         clip_range=0.2,
-        ent_coef=0.01,
+        ent_coef=0.005,
         vf_coef=0.5,
         tensorboard_log=None,
         device="cpu" if args.cpu else "auto",
@@ -275,13 +275,13 @@ def main():
 
     metrics_cb = MetricsCallback(n_envs=args.n_envs)
 
-    curriculum_stages = [(0, 1), (1, 2), (2, 4), (3, 6)]
+    curriculum_stages = [(0, 0), (0, 1), (1, 2), (2, 4), (3, 6)]
 
     cur_cb = CurriculumCallback(
         stages=curriculum_stages,
         metrics_cb=metrics_cb,
-        window_eps=100,        # 200 биш 100 болго
-        threshold=0.60,        # 0.7 биш 0.6 болгож зөөллөх
+        window_eps=200,        # 200 биш 100 болго
+        threshold=0.95,        # 0.7 биш 0.6 болгож зөөллөх
         check_every_steps=1000, # 2000 биш 1000 алхам тутам шалгахаар хийх
         min_episodes_per_stage=150
     )

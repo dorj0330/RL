@@ -76,22 +76,22 @@ class CurveDrawEnv(gym.Env):
     def __init__(self,
                  with_obstacles: bool = True,
                  n_obstacles: Tuple[int, int] = (2, 6),
-                 lidar_beams: int = 32,
+                 lidar_beams: int = 64,
                  max_range: float = 0.5,
                  min_step: float = 0.01,
                  max_step: float = 0.05,
                  max_turn: float = math.radians(45),
-                 goal_eps: float = 0.02,
-                 max_steps: int = 200,
-                 goal_bonus: float = 40.0,
-                 progress_scale: float = 8.0,
-                 small_step_penalty: float = -0.01,
-                 curvature_bonus_weight: float = 0.5,
-                 sharp_turn_penalty_weight: float = 0.6,
-                 collision_penalty: float = 12.0,
-                 out_of_bounds_penalty: float = 4.0,
-                 failure_penalty: float = 8.0,
-                 miss_penalty_scale: float = 25.0,
+                 goal_eps: float = 0.03,        # was 0.02
+                 max_steps: int = 300,          # was 200
+                 goal_bonus: float = 60.0,      # was 40
+                 progress_scale: float = 12.0,  # was 8
+                 small_step_penalty: float = -0.05,  # was -0.01
+                 curvature_bonus_weight: float = 1.5,  # slightly lower
+                 sharp_turn_penalty_weight: float = 0.4,  # slightly lower
+                 collision_penalty: float = 15.0,       # a bit stronger
+                 out_of_bounds_penalty: float = 6.0,    # a bit stronger
+                 failure_penalty: float = 10.0,         # a bit stronger
+                 miss_penalty_scale: float = 15.0,   # a bit stronger
                  seed: Optional[int] = None):
         super().__init__()
         self.with_obstacles = with_obstacles
@@ -310,12 +310,37 @@ class CurveDrawEnv(gym.Env):
         # --- Reward ---------------------------------------------------------------
         r = 0.0
         old_dist = math.dist(self.cur, self.goal)
+
+        # (1) Adaptive step length: go bigger when far, smaller when close
+        #     keeps within [min_step, max_step]
+        dist_norm_for_step = min(1.0, old_dist / math.sqrt(2))
+        scale_mult = 0.5 + 0.5 * dist_norm_for_step  # ∈ [0.5, 1.0]
+        step_len *= scale_mult
+
+        # Recompute proposal using adjusted step_len
+        theta = theta0 + dtheta
+        new_dir = np.array(
+            [math.cos(theta), math.sin(theta)], dtype=np.float32)
+        new_pt = (
+            float(self.cur[0] + step_len * new_dir[0]),
+            float(self.cur[1] + step_len * new_dir[1]),
+        )
+
         new_dist = math.dist(new_pt, self.goal)
 
+        # (2) Progress shaping
         progress = max(0.0, old_dist - new_dist)
         r += progress_scale * progress
 
-        # smooth curvature bonus / penalty
+        # (3) Direction-to-goal alignment bonus (encourages pointing at goal)
+        gvec = np.array([self.goal[0] - self.cur[0],
+                        self.goal[1] - self.cur[1]], dtype=np.float32)
+        glen = float(np.linalg.norm(gvec)) + 1e-9
+        gdir = gvec / glen
+        align = float(np.dot(new_dir, gdir))  # ∈ [-1, 1]
+        r += 1.5 * align                      # new: modest push toward goal
+
+        # (4) Smooth curvature bonus / penalty (keep your shape, slightly lower weights)
         turn_ratio = abs(dtheta) / max(1e-6, self.max_turn)
         mu, sigma = 0.35, 0.25
         curvature_bonus = math.exp(-0.5 *
@@ -324,6 +349,7 @@ class CurveDrawEnv(gym.Env):
         if turn_ratio > 0.7:
             r -= sharp_turn_penalty_weight * (turn_ratio - 0.7) / 0.3
 
+        # (5) Time/step cost (discourage tiny dithering)
         r += small_step_penalty
 
         terminated = False
@@ -343,11 +369,14 @@ class CurveDrawEnv(gym.Env):
             self.path.append(self.cur)
             self.prev_dir = new_dir
 
-            # goal reached
+            near_eps = 2.0 * goal_eps
             if new_dist <= goal_eps:
                 r += goal_bonus
                 success = True
                 terminated = True
+            elif new_dist <= near_eps:
+                # partial bonus when extremely close (helps bootstrap)
+                r += 0.25 * goal_bonus
 
         # max steps
         self.steps += 1
