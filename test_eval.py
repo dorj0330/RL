@@ -25,6 +25,9 @@ from curve_env import CurveDrawEnv, Coordinate
 from viz import rollout_and_save_gif  # uses your existing drawer
 
 
+DEFAULT_GOAL_EPS = 0.02
+
+
 # ---------- Small helper to draw a final PNG ----------
 def _draw_env(ax, env: CurveDrawEnv, path: List[Coordinate]):
     ax.clear()
@@ -65,9 +68,10 @@ class FixedCurveEnv(CurveDrawEnv):
         start: Coordinate,
         goal: Coordinate,
         polys: List[Polygon],
+        goal_eps: float = DEFAULT_GOAL_EPS,
         **kwargs
     ):
-        super().__init__(with_obstacles=True, **kwargs)
+        super().__init__(with_obstacles=True, goal_eps=goal_eps, **kwargs)
         self._fixed_start = start
         self._fixed_goal = goal
         self._fixed_polys = polys
@@ -100,6 +104,7 @@ def run_one_case(
     max_steps: int = 300,
     deterministic: bool = True,
     seed: Optional[int] = 1234,
+    goal_eps: float = DEFAULT_GOAL_EPS,
 ):
     os.makedirs(out_dir, exist_ok=True)
     gif_path = os.path.join(out_dir, f"{case_name}.gif")
@@ -107,7 +112,8 @@ def run_one_case(
 
     # Build fixed env
     env = FixedCurveEnv(start=start, goal=goal,
-                        polys=obstacles, max_steps=max_steps, seed=seed)
+                        polys=obstacles, goal_eps=goal_eps,
+                        max_steps=max_steps, seed=seed)
     model = PPO.load(model_path, device="auto")
 
     # 1) Save GIF of the rollout

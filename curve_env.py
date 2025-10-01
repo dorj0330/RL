@@ -81,7 +81,7 @@ class CurveDrawEnv(gym.Env):
                  min_step: float = 0.01,
                  max_step: float = 0.05,
                  max_turn: float = math.radians(45),
-                 goal_eps: float = 0.07,
+                 goal_eps: float = 0.02,
                  max_steps: int = 200,
                  seed: Optional[int] = None):
         super().__init__()
@@ -239,7 +239,7 @@ class CurveDrawEnv(gym.Env):
         import numpy as np
 
         # --- Hyperparams ----------------------------------------------------------
-        goal_eps = getattr(self, "goal_eps", 0.03)
+        goal_eps = getattr(self, "goal_eps", 0.02)
         goal_bonus = getattr(self, "goal_bonus",30.0)
         progress_scale = getattr(self, "progress_scale", 6.0)
         small_step_penalty = getattr(self, "small_step_penalty", 0.0)

@@ -11,7 +11,11 @@ from viz import rollout_and_save_gif
 import numpy as np
 import matplotlib.pyplot as plt
 from stable_baselines3.common.callbacks import BaseCallback
-from typing import List
+from typing import List, Optional
+
+DEFAULT_GOAL_EPS = 0.02
+
+DEFAULT_GOAL_EPS = 0.02
 
 
 class MetricsCallback(BaseCallback):
@@ -137,6 +141,38 @@ class MetricsCallback(BaseCallback):
             plt.tight_layout()
             plt.savefig("result/dist_history.png")
 
+    # --- helpers consumed by the curriculum controller -----------------
+    def success_rate_since(self, start_idx: int, window: int) -> Optional[float]:
+        """Return the moving-average success rate since *start_idx*.
+
+        The curriculum controller resets *start_idx* whenever it promotes the
+        agent to a harder stage, so this value only reflects performance on the
+        current stage.  Returns ``None`` until we have seen at least ``window``
+        episodes for that stage.
+        """
+
+        if start_idx < 0:
+            start_idx = max(0, len(self.success_history) + start_idx)
+
+        if start_idx >= len(self.success_history):
+            return None
+
+        stage_hist = self.success_history[start_idx:]
+        if len(stage_hist) < window:
+            return None
+
+        ma = self._moving_avg(stage_hist, window)
+        if ma.size == 0:
+            return None
+        return float(ma[-1])
+
+    def episodes_since(self, start_idx: int) -> int:
+        """How many episodes have finished since *start_idx*."""
+
+        if start_idx < 0:
+            start_idx = max(0, len(self.success_history) + start_idx)
+        return max(0, len(self.success_history) - start_idx)
+
 
 class CurriculumCallback(BaseCallback):
     """
@@ -146,7 +182,8 @@ class CurriculumCallback(BaseCallback):
 
     def __init__(self, stages, metrics_cb: MetricsCallback,
                  window_eps: int = 200, threshold: float = 0.70,
-                 check_every_steps: int = 1000):
+                 check_every_steps: int = 1000,
+                 min_episodes_per_stage: int = 0):
         super().__init__()
         self.stages = stages              # [(0,1), (1,2), (2,4), (3,6), ...]
         self.metrics_cb = metrics_cb
@@ -155,6 +192,8 @@ class CurriculumCallback(BaseCallback):
         self.check_every_steps = check_every_steps
         self._last_check = 0
         self.stage_idx = 0
+        self.min_episodes_per_stage = min_episodes_per_stage
+        self._stage_start_idx = 0
 
     def _on_training_start(self) -> None:
         # эхний шатыг вектортой бүх env-д тохируулна
@@ -162,6 +201,7 @@ class CurriculumCallback(BaseCallback):
             "set_obstacle_range", self.stages[self.stage_idx])
         print(f"[Curriculum] Start at stage {self.stage_idx+1}/{len(self.stages)} "
               f"n_obstacles={self.stages[self.stage_idx]}")
+        self._stage_start_idx = len(self.metrics_cb.success_history)
 
     def _on_step(self) -> bool:
         # хэт ойр ойрхон шалгахгүй
@@ -170,20 +210,30 @@ class CurriculumCallback(BaseCallback):
         self._last_check = self.num_timesteps
 
         # хангалттай эпизод цугларсан уу?
-        if len(self.metrics_cb.success_history) < self.window_eps:
+        episodes_in_stage = self.metrics_cb.episodes_since(self._stage_start_idx)
+        min_eps_needed = max(self.window_eps, self.min_episodes_per_stage)
+        if episodes_in_stage < min_eps_needed:
             return True
 
-        # сүүлийн window_eps дээрх амжилтын дундаж
-        ma = self.metrics_cb._moving_avg(
-            self.metrics_cb.success_history, self.window_eps)
-        cur = float(ma[-1])
+        # сүүлийн window_eps дээрх амжилтын дундаж ( зөвхөн одоогийн шат )
+        cur = self.metrics_cb.success_rate_since(
+            self._stage_start_idx, self.window_eps)
+        if cur is None:
+            return True
+
+        stage_no = self.stage_idx + 1
+        print(f"[Curriculum] Stage {stage_no}/{len(self.stages)} | "
+              f"success_rate={cur:.2f} over last {self.window_eps} episodes "
+              f"({episodes_in_stage} episodes seen)")
 
         if cur >= self.threshold and self.stage_idx < len(self.stages) - 1:
             self.stage_idx += 1
             new_rng = self.stages[self.stage_idx]
             self.model.get_env().env_method("set_obstacle_range", new_rng)
             print(f"[Curriculum] Advance → stage {self.stage_idx+1}/{len(self.stages)} "
-                  f"n_obstacles={new_rng} (avg_success={cur:.2f})")
+                  f"n_obstacles={new_rng} (avg_success={cur:.2f}, "
+                  f"episodes_in_stage={episodes_in_stage})")
+            self._stage_start_idx = len(self.metrics_cb.success_history)
         return True
 
 
@@ -201,7 +251,7 @@ def main():
     # Vectorized env for speed
 
     def make_env_fn():
-        return CurveDrawEnv(with_obstacles=True)
+        return CurveDrawEnv(with_obstacles=True, goal_eps=DEFAULT_GOAL_EPS)
 
     vec = make_vec_env(make_env_fn, n_envs=args.n_envs,
                        vec_env_cls=SubprocVecEnv)
@@ -234,7 +284,8 @@ def main():
         metrics_cb=metrics_cb,
         window_eps=100,        # 200 биш 100 болго
         threshold=0.60,        # 0.7 биш 0.6 болгож зөөллөх
-        check_every_steps=1000 # 2000 биш 1000 алхам тутам шалгахаар хийх
+        check_every_steps=1000, # 2000 биш 1000 алхам тутам шалгахаар хийх
+        min_episodes_per_stage=150
     )
 
     model.learn(total_timesteps=args.timesteps,
@@ -244,7 +295,8 @@ def main():
     vec.close()
 
     # Quick visual eval (single env, deterministic actions)
-    env = CurveDrawEnv(with_obstacles=True, seed=args.seed + 123)
+    env = CurveDrawEnv(with_obstacles=True, goal_eps=DEFAULT_GOAL_EPS,
+                       seed=args.seed + 123)
     rollout_and_save_gif(env, model, out_gif=args.gif,
                          max_steps=300, deterministic=True)
     print(f"Saved model to {args.save} and eval to {args.gif}")
