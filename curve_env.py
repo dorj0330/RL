@@ -81,17 +81,19 @@ class CurveDrawEnv(gym.Env):
                  min_step: float = 0.01,
                  max_step: float = 0.05,
                  max_turn: float = math.radians(45),
-                 goal_eps: float = 0.03,        # was 0.02
-                 max_steps: int = 300,          # was 200
-                 goal_bonus: float = 60.0,      # was 40
-                 progress_scale: float = 12.0,  # was 8
-                 small_step_penalty: float = -0.05,  # was -0.01
-                 curvature_bonus_weight: float = 1.5,  # slightly lower
-                 sharp_turn_penalty_weight: float = 0.4,  # slightly lower
-                 collision_penalty: float = 15.0,       # a bit stronger
-                 out_of_bounds_penalty: float = 6.0,    # a bit stronger
-                 failure_penalty: float = 10.0,         # a bit stronger
-                 miss_penalty_scale: float = 15.0,   # a bit stronger
+                 goal_eps: float = 0.03,
+                 max_steps: int = 300,
+
+                 # -------- scores below --------
+                 goal_bonus: float = 80.0,          # ↑ more reward for reaching goal
+                 progress_scale: float = 15.0,      # ↑ stronger reward for progress
+                 small_step_penalty: float = -0.02,  # ↓ softer penalty per step
+                 curvature_bonus_weight: float = 2.0,   # ↑ encourage smooth curves
+                 sharp_turn_penalty_weight: float = 0.5,  # ↑ penalize sharp turns more
+                 collision_penalty: float = 20.0,       # ↑ stronger collision penalty
+                 out_of_bounds_penalty: float = 10.0,   # ↑ stronger penalty if OOB
+                 failure_penalty: float = 12.0,         # ↑ missed episode penalty
+                 miss_penalty_scale: float = 20.0,      # ↑ penalize shortfall
                  seed: Optional[int] = None):
         super().__init__()
         self.with_obstacles = with_obstacles

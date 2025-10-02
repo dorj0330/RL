@@ -142,7 +142,8 @@ def run_one_case(
     fig.tight_layout()
     fig.savefig(png_path, dpi=160)
     plt.close(fig)
-    shortfall = last_info.get("shortfall") if isinstance(last_info, dict) else None
+    shortfall = last_info.get("shortfall") if isinstance(
+        last_info, dict) else None
     success = last_info.get("success") if isinstance(last_info, dict) else None
     if shortfall is not None:
         print(f"[{case_name}] shortfall={shortfall:.4f} success={bool(success)}")
@@ -151,12 +152,14 @@ def run_one_case(
 
 def main():
     MODEL = "model/ppo_curve.zip"
+    use_final = True  # if False, use stage_0 or stage_1 models in scenarios below
     OUT_DIR = "out"
 
     # ---- Define STATIC scenarios here ----
     scenarios = [
         # Simple: one centered circle, diagonal path
         dict(
+            path="model/checkpoints/ppo_curve_stage_0_complete.zip",
             name="case1_diagonal_circle",
             start=(0.1, 0.1),
             goal=(0.9, 0.9),
@@ -164,13 +167,15 @@ def main():
         ),
         # Two obstacles offset
         dict(
+            path="model/checkpoints/ppo_curve_stage_1_complete.zip",
             name="case2_two_circles",
             start=(0.1, 0.2),
             goal=(0.9, 0.8),
-            obstacles=[_circle(0.4, 0.6, 0.10), _circle(0.7, 0.45, 0.08)],
+            obstacles=[_circle(0.5, 0.6, 0.10)],
         ),
         # Narrow channel
         dict(
+            path="model/checkpoints/ppo_curve_stage_1_complete.zip",
             name="case3_channel",
             start=(0.1, 0.5),
             goal=(0.9, 0.5),
@@ -181,20 +186,20 @@ def main():
         ),
         # Curvy detour: cluster near center
         dict(
+            path="model/checkpoints/ppo_curve_stage_1_complete.zip",
             name="case4_cluster",
             start=(0.15, 0.15),
             goal=(0.85, 0.85),
             obstacles=[
-                _circle(0.45, 0.45, 0.08),
-                _circle(0.55, 0.52, 0.07),
-                _circle(0.52, 0.40, 0.06),
+                _circle(0.2, 0.45, 0.08),
+                _circle(0.7, 0.5, 0.07),
             ],
         ),
     ]
 
     for sc in scenarios:
         run_one_case(
-            model_path=MODEL,
+            model_path=MODEL if use_final else sc["path"] if "path" in sc else MODEL,
             out_dir=OUT_DIR,
             case_name=sc["name"],
             start=sc["start"],
